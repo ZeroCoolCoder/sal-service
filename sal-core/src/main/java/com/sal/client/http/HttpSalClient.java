@@ -9,11 +9,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.*;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.BodyInserters;
+import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.netty.http.client.HttpClient;
 
 import java.time.Duration;
 import java.util.Map;
@@ -34,12 +37,24 @@ public class HttpSalClient implements SalClient {
 
     public HttpSalClient(SalClientProperties properties) {
         this.properties = properties;
+        
+        // Configure exchange strategies with larger buffer for large file downloads (up to 50MB)
+        ExchangeStrategies exchangeStrategies = ExchangeStrategies.builder()
+                .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(50 * 1024 * 1024))
+                .build();
+        
+        // Configure HTTP client with timeouts
+        HttpClient httpClient = HttpClient.create()
+                .responseTimeout(Duration.ofMillis(properties.getReadTimeoutMs()));
+        
         this.webClient = WebClient.builder()
                 .baseUrl(properties.getBaseUrl())
+                .clientConnector(new ReactorClientHttpConnector(httpClient))
+                .exchangeStrategies(exchangeStrategies)
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .build();
         
-        logger.info("Initialized HTTP SAL client with base URL: {}", properties.getBaseUrl());
+        logger.info("Initialized HTTP SAL client with base URL: {}, maxInMemorySize: 50MB", properties.getBaseUrl());
     }
 
     public HttpSalClient(WebClient webClient, SalClientProperties properties) {
